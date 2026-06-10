@@ -1,0 +1,22 @@
+{
+  "short_name": "শিবির বিডি",
+  "name": "শিবির ডট কম বাংলাদেশ",
+  "description": "বাংলাদেশ জেলার ওপর ভিত্তি করে সঠিক নামাজের সময়সূচী, অফলাইন ক্যালেন্ডার, দোয়া ও শিক্ষা সেবা প্ল্যাটফর্ম।",
+  "icons": [
+    {
+      "src": "https://img.icons8.com/color/192/islamic-mosque.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "https://img.icons8.com/color/512/islamic-mosque.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#064e3b",
+  "theme_color": "#064e3b",
+  "display": "standalone",
+  "orientation": "portrait"
+}
