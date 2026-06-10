@@ -89,7 +89,7 @@ export interface AppSettings {
     isha: boolean;
   };
   darkMode?: boolean;
-  selectedAdhanSample?: 'synth_classic' | 'synth_makkah' | 'synth_madinah' | 'synth_aqsa' | 'mp3_makkah' | 'mp3_madinah' | 'mp3_egypt' | 'custom_uploaded';
+  selectedAdhanSample?: 'synth_classic' | 'synth_makkah' | 'synth_madinah' | 'synth_aqsa' | 'synth_dhaka' | 'mp3_makkah' | 'mp3_madinah' | 'mp3_egypt' | 'custom_uploaded';
   customAdhanBase64?: string;
   customAdhanName?: string;
 }

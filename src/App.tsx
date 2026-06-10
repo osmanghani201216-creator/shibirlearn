@@ -56,7 +56,18 @@ import {
   Languages,
   History,
   HelpCircle,
-  Coins
+  Coins,
+  WifiOff,
+  Wifi,
+  Cloud,
+  CloudRain,
+  CloudLightning,
+  CloudDrizzle,
+  Wind,
+  Umbrella,
+  Thermometer,
+  RefreshCw,
+  Droplets
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -106,6 +117,20 @@ const DEFAULT_SETTINGS: AppSettings = {
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [isOffline, setIsOffline] = useState(!navigator.onLine);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   useEffect(() => {
     if (!isFirebaseEnabled) {
@@ -191,6 +216,126 @@ export default function App() {
   );
 
   const activeDistrict = BANGLADESH_DISTRICTS.find((d) => d.id === settings.selectedDistrictId) || BANGLADESH_DISTRICTS[0];
+
+  // --- Weather fetch integration using Open-Meteo API ---
+  const [weather, setWeather] = useState<{
+    temp: number;
+    feelsLike: number;
+    humidity: number;
+    precip: number;
+    weatherCode: number;
+    windSpeed: number;
+    isDay: number;
+    statusText: string;
+    note: string;
+    iconType: string;
+    lastUpdated: string;
+  } | null>(() => {
+    const saved = localStorage.getItem('current_weather_cache');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        return null;
+      }
+    }
+    return null;
+  });
+
+  const [weatherLoading, setWeatherLoading] = useState(false);
+  const [weatherError, setWeatherError] = useState<string | null>(null);
+
+  const fetchWeather = async () => {
+    if (isOffline) {
+      return;
+    }
+    setWeatherLoading(true);
+    setWeatherError(null);
+    try {
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${activeDistrict.latitude}&longitude=${activeDistrict.longitude}&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,rain,showers,snowfall,weather_code,wind_speed_10m&timezone=Asia/Dhaka`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('আবহাওয়ার তথ্য পাওয়া যায়নি');
+      const data = await res.json();
+      
+      const current = data.current;
+      if (current) {
+        const code = current.weather_code;
+        let statusText = 'পরিষ্কার আকাশ';
+        let note = 'মসজিদে যাতায়াত অত্যন্ত নিরাপদ ও অনুকূল। আলহামদুলিল্লাহ!';
+        let iconType = 'sun';
+
+        if (code === 0) {
+          statusText = 'পরিষ্কার আকাশ';
+          note = 'মসজিদে যাতায়াত অত্যন্ত নিরাপদ ও অনুকূল। আলহামদুলিল্লাহ!';
+          iconType = 'sun';
+        } else if ([1, 2, 3].includes(code)) {
+          statusText = 'আংশিক মেঘলা';
+          note = 'সালাত আদায়ে মসজিদে যাওয়ার পরিবেশ ভালো।';
+          iconType = 'cloud-sun';
+        } else if ([45, 48].includes(code)) {
+          statusText = 'কুয়াশাচ্ছন্ন';
+          note = 'দৃষ্টিসীমা কম হতে পারে। মসজিদে সাবধানে যাতায়াত করুন।';
+          iconType = 'wind';
+        } else if ([51, 53, 55].includes(code)) {
+          statusText = 'গুঁড়ি গুঁড়ি বৃষ্টি';
+          note = 'হালকা গুঁড়িগুঁড়ি বৃষ্টি হচ্ছে। মসজিদে যাওয়ার সময়ে ছাতা সাথে রাখা ভালো।';
+          iconType = 'cloud-drizzle';
+        } else if ([61, 63, 65, 80, 81, 82].includes(code)) {
+          const isHeavy = [65, 82].includes(code);
+          statusText = isHeavy ? 'ভারী বর্ষণ চলছে!' : 'বৃষ্টিপাত বা মাঝারি বৃষ্টি';
+          note = isHeavy 
+            ? 'ভারী বৃষ্টি হচ্ছে! মসজিদে যাওয়ার সময় অবশ্যই ছাতা নেবেন এবং রাস্তায় কাদা ও পিচ্ছিল থেকে বাঁচতে ধীরেসুস্থে হাঁটুন।' 
+            : 'বৃষ্টি হচ্ছে। কাদা ও পিচ্ছিল পথ এড়াতে ছাতা সাথে নিয়ে মসজিদে গমন করুন!';
+          iconType = 'cloud-rain';
+        } else if ([95, 96, 99].includes(code)) {
+          statusText = 'বজ্রঝড় ও দুর্যোগপূর্ণ!';
+          note = 'বজ্রপাত ও দুর্যোগপূর্ণ আবহাওয়া! তীব্র ঝড় ও বজ্রপাতের সময় অতিরিক্ত সতর্কতার সাথে মসজিদে যান বা বাড়ি থেকে নিরাপদে আদায় করুন।';
+          iconType = 'cloud-lightning';
+        } else {
+          statusText = 'মেঘলা আকাশ';
+          note = 'আকাশ কিছুটা মেঘলা। আবহাওয়ার পরিবর্তন লক্ষ্য রাখুন।';
+          iconType = 'cloud';
+        }
+
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString('bn-BD', { hour: '2-digit', minute: '2-digit' });
+
+        const weatherObj = {
+          temp: Math.round(current.temperature_2m),
+          feelsLike: Math.round(current.apparent_temperature),
+          humidity: Math.round(current.relative_humidity_2m),
+          precip: current.precipitation,
+          weatherCode: code,
+          windSpeed: current.wind_speed_10m,
+          isDay: current.is_day,
+          statusText,
+          note,
+          iconType,
+          lastUpdated: timeStr
+        };
+
+        setWeather(weatherObj);
+        localStorage.setItem('current_weather_cache', JSON.stringify(weatherObj));
+      }
+    } catch (err) {
+      console.error('Weather fetch error:', err);
+      // Only set error if we don't have cached data to show
+      if (!weather) {
+        setWeatherError('আবহাওয়ার তথ্য লোড করা যায়নি');
+      }
+    } finally {
+      setWeatherLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchWeather();
+    // Auto sync weather every 30 minutes
+    const interval = setInterval(() => {
+      fetchWeather();
+    }, 30 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [settings.selectedDistrictId, isOffline]);
 
   // Convert current hours/mins to minutes for comparisons
   const curHours = currentTime.getHours();
@@ -556,6 +701,18 @@ export default function App() {
             {getHijriDate(currentTime, (settings as any).hijriOffset ?? 0).fullString} • {getBengaliDate(currentTime).fullString}
           </p>
 
+          <div className="flex justify-center gap-2 mt-1.5 flex-wrap">
+            {isOffline ? (
+              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-800 bg-rose-50 border border-rose-100/60 rounded-full px-2.5 py-0.5 shadow-4xs" title="ডিভাইসটি অফলাইনে রয়েছে - কোর ফিচার সচল">
+                <WifiOff size={11} className="text-rose-600 animate-pulse" /> অফলাইন মোড
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-50/60 border border-emerald-100/50 rounded-full px-2.5 py-0.5 shadow-4xs" title="অ্যাপটি সম্পূর্ণভাবে অফলাইনে ব্যবহারের জন্য ক্যাশ করা হয়েছে">
+                <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse"></span> অফলাইন-প্রস্তুত
+              </span>
+            )}
+          </div>
+
           <div className="flex justify-center items-center gap-2 mt-2">
             <MapPin size={14} className="text-emerald-700" />
             <span className="text-xs md:text-sm font-bold text-emerald-900">
@@ -793,6 +950,149 @@ export default function App() {
                       </span>
                     </div>
                   </div>
+
+                  {/* Weather & Mosque Attendance Forecast Card */}
+                  {(() => {
+                    const getWeatherIcon = (type: string) => {
+                      switch (type) {
+                        case 'sun':
+                          return <Sun className="text-amber-500 animate-[spin_30s_linear_infinite]" size={28} />;
+                        case 'cloud-sun':
+                          return (
+                            <div className="relative w-8 h-8 flex items-center justify-center">
+                              <Sun className="text-amber-500 absolute top-0.5 right-0.5" size={14} />
+                              <Cloud className="text-sky-400 absolute bottom-0.5 left-0.5" size={20} />
+                            </div>
+                          );
+                        case 'cloud-drizzle':
+                          return <CloudDrizzle className="text-blue-400 animate-pulse" size={28} />;
+                        case 'cloud-rain':
+                          return <CloudRain className="text-blue-500 animate-bounce" size={28} />;
+                        case 'cloud-lightning':
+                          return <CloudLightning className="text-purple-600 animate-pulse animate-bounce" size={28} />;
+                        case 'wind':
+                          return <Wind className="text-teal-400 animate-pulse" size={28} />;
+                        default:
+                          return <Cloud className="text-slate-400" size={28} />;
+                      }
+                    };
+
+                    if (weatherLoading && !weather) {
+                      return (
+                        <div className="bg-white rounded-2xl border border-emerald-50 p-4 flex items-center justify-between animate-pulse" id="weather-forecast-loading">
+                          <div className="space-y-2">
+                            <div className="h-4 bg-emerald-50/50 w-32 rounded-lg" />
+                            <div className="h-3 bg-emerald-50/50 w-48 rounded-lg" />
+                          </div>
+                          <div className="h-8 w-8 bg-emerald-50/50 rounded-full" />
+                        </div>
+                      );
+                    }
+
+                    if (weatherError && !weather) {
+                      return (
+                        <div className="bg-rose-50/30 border border-rose-100/60 rounded-2xl p-4 flex items-center justify-between gap-4" id="weather-forecast-error">
+                          <div className="flex items-center gap-2">
+                            <AlertTriangle size={16} className="text-rose-600" />
+                            <span className="text-xs font-semibold text-rose-900">{weatherError}</span>
+                          </div>
+                          <button
+                            onClick={fetchWeather}
+                            className="text-[10px] font-bold text-rose-850 hover:underline flex items-center gap-1 cursor-pointer"
+                          >
+                            <RefreshCw size={11} /> পুনরায় চেষ্টা করুন
+                          </button>
+                        </div>
+                      );
+                    }
+
+                    if (!weather) return null;
+
+                    const isSevere = ['cloud-rain', 'cloud-lightning'].includes(weather.iconType);
+                    
+                    return (
+                      <div className="bg-white rounded-2xl border border-emerald-100/70 p-4 shadow-3xs hover:shadow-2xs transition-all" id="weather-forecast-card">
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex items-center gap-3">
+                            <div className="bg-slate-50/60 p-2.5 rounded-2xl flex items-center justify-center animate-fade-in">
+                              {getWeatherIcon(weather.iconType)}
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-xs font-black text-emerald-950 font-mono">
+                                  {toBengaliNumber(weather.temp)}°C
+                                </span>
+                                <span className="text-[11px] font-semibold text-emerald-900 bg-emerald-50/50 border border-emerald-100/40 px-2 py-0.5 rounded-lg">
+                                  {weather.statusText}
+                                </span>
+                                {isOffline && (
+                                  <span className="text-[9px] font-extrabold text-slate-500 bg-slate-50 border border-slate-100/50 px-1.5 py-0.5 rounded-sm">
+                                    ক্যাশড
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[10px] text-emerald-600 font-medium mt-1">
+                                {activeDistrict.nameBn} জেলা • অনুভূত তাপমাত্রা {toBengaliNumber(weather.feelsLike)}°C
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <span className="text-[9px] text-emerald-600 bg-slate-50 border border-slate-100 px-1.5 py-0.5 rounded-md font-mono hidden sm:inline" title="সর্বশেষ আপডেট">
+                              আপডেট: {weather.lastUpdated}
+                            </span>
+                            <button
+                              onClick={fetchWeather}
+                              disabled={weatherLoading}
+                              className="p-1.5 rounded-xl text-emerald-700 hover:bg-emerald-50 transition-colors disabled:opacity-50 cursor-pointer"
+                              title="আবহাওয়া রিফ্রেশ করুন"
+                              id="btn-weather-refresh"
+                            >
+                              <RefreshCw size={12} className={weatherLoading ? "animate-spin text-emerald-600" : ""} />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Weather detail columns */}
+                        <div className="grid grid-cols-3 gap-2 mt-3 border-t border-dashed border-emerald-50 pt-2.5">
+                          <div className="bg-emerald-50/20 rounded-xl p-2 text-center">
+                            <span className="text-[9px] text-emerald-600 font-medium block">আর্দ্রতা</span>
+                            <span className="text-xs font-bold text-emerald-900 font-mono">{toBengaliNumber(weather.humidity)}%</span>
+                          </div>
+                          <div className="bg-emerald-50/20 rounded-xl p-2 text-center">
+                            <span className="text-[9px] text-emerald-600 font-medium block flex items-center justify-center gap-0.5">
+                              <Droplets className="text-blue-500" size={10} />
+                              বৃষ্টি
+                            </span>
+                            <span className="text-xs font-bold text-emerald-900 font-mono">
+                              {toBengaliNumber(weather.precip)} মিমি
+                            </span>
+                          </div>
+                          <div className="bg-emerald-50/20 rounded-xl p-2 text-center">
+                            <span className="text-[9px] text-emerald-600 font-medium block">বাতাস</span>
+                            <span className="text-xs font-bold text-emerald-900 font-mono">
+                              {toBengaliNumber(weather.windSpeed)} কিমি/ঘণ্টা
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Mosque attendance assistant message */}
+                        <div className={`mt-3 p-2.5 rounded-xl border flex items-start gap-2 text-[10px] leading-relaxed font-semibold transition-colors ${
+                          isSevere 
+                            ? 'bg-rose-50/60 border-rose-100/60 text-rose-900 font-bold animate-pulse' 
+                            : 'bg-emerald-50/40 border-emerald-100/40 text-emerald-950'
+                        }`}>
+                          <Umbrella size={14} className={`shrink-0 mt-0.5 ${isSevere ? 'text-rose-600' : 'text-emerald-700'}`} />
+                          <div>
+                            <span className="font-bold block text-[11px] mb-0.5">
+                              {isSevere ? 'মসজিদ উপস্থিতি সতর্কতা:' : 'মসজিদ যাতায়াত পরামর্শ:'}
+                            </span>
+                            <span>{weather.note}</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {/* Fajr, Sunrise landmark, Dhuhr, Asr, Maghrib, Isha */}
                   <div className="grid grid-cols-1 gap-3">
@@ -1137,8 +1437,11 @@ export default function App() {
                         </div>
                       </motion.div>
 
-                      {/* Center Pin */}
-                      <div className="w-4 h-4 bg-emerald-900 rounded-full border-2 border-white z-10 shadow" />
+                      {/* Center Pin showing dynamic numeric Qibla degree to prevent guessing */}
+                      <div className="w-12 h-12 bg-emerald-950 rounded-full border-2 border-emerald-100 z-10 shadow-md flex flex-col items-center justify-center text-white select-none" id="qibla-degree-center-pin">
+                        <span className="text-[11px] font-black font-mono leading-none text-emerald-100">{toBengaliNumber(273)}°</span>
+                        <span className="text-[7.5px] font-extrabold text-emerald-300 leading-none mt-0.5 tracking-wider">কিবলা</span>
+                      </div>
                     </div>
 
                     {/* Drag / Rotate slider controls for desktop mock */}

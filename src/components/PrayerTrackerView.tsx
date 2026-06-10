@@ -119,11 +119,12 @@ export default function PrayerTrackerView({ onBack }: { onBack: () => void }) {
 
   // Listen to cloud logs in real-time, or fetch from localstorage
   useEffect(() => {
+    let unsubscribe = () => {};
     if (currentUser) {
       const path = `users/${currentUser.uid}/prayer_logs`;
       const q = query(collection(db, path));
       
-      const unsubscribe = onSnapshot(q, (snapshot) => {
+      unsubscribe = onSnapshot(q, (snapshot) => {
         const loaded: SavedLogs = {};
         snapshot.forEach((snapDoc) => {
           loaded[snapDoc.id] = snapDoc.data() as DayPrayerLog;
@@ -131,11 +132,19 @@ export default function PrayerTrackerView({ onBack }: { onBack: () => void }) {
         setLogs(loaded);
         recalculateStreak(loaded);
       }, (error) => {
-        // Safe wrap error matching strict rule constraint
-        handleFirestoreError(error, OperationType.LIST, path);
+        console.warn('Firestore subscription alert (falling back to LocalStorage):', error);
+        // Fallback offline storage
+        const loadedRaw = localStorage.getItem('prayer_tracker_logs_db_v1');
+        if (loadedRaw) {
+          try {
+            const parsed = JSON.parse(loadedRaw) as SavedLogs;
+            setLogs(parsed);
+            recalculateStreak(parsed);
+          } catch (e) {
+            console.error('Failed to parse prayer logs database', e);
+          }
+        }
       });
-      
-      return () => unsubscribe();
     } else {
       // Fallback offline storage
       const loadedRaw = localStorage.getItem('prayer_tracker_logs_db_v1');
@@ -152,6 +161,7 @@ export default function PrayerTrackerView({ onBack }: { onBack: () => void }) {
         setStreakDays(0);
       }
     }
+    return () => unsubscribe();
   }, [currentUser]);
 
   // Sync state notes with log
@@ -165,7 +175,7 @@ export default function PrayerTrackerView({ onBack }: { onBack: () => void }) {
   };
 
   // Push individual day log to firestore
-  const saveLogsToCloud = async (dateKey: string, dayLog: DayPrayerLog) => {
+  const saveLogsToCloud = async (dateKey: string, dayLog: DayPrayerLog, fullLogsState: SavedLogs) => {
     if (currentUser) {
       const path = `users/${currentUser.uid}/prayer_logs`;
       
@@ -193,7 +203,8 @@ export default function PrayerTrackerView({ onBack }: { onBack: () => void }) {
           notes: dayLog.notes || ''
         });
       } catch (error) {
-        handleFirestoreError(error, OperationType.WRITE, `${path}/${dateKey}`);
+        console.warn('Firestore write failed, relying on LocalStorage fallback:', error);
+        saveLogsLocally(fullLogsState);
       }
     }
   };
@@ -203,11 +214,12 @@ export default function PrayerTrackerView({ onBack }: { onBack: () => void }) {
     setLogs(updatedLogs);
     recalculateStreak(updatedLogs);
 
+    // Always mirror to LocalStorage as a high-reliability dual-write buffer
+    saveLogsLocally(updatedLogs);
+
     if (currentUser) {
       const dayLog = updatedLogs[targetDateKey] || createEmptyDayLog();
-      await saveLogsToCloud(targetDateKey, dayLog);
-    } else {
-      saveLogsLocally(updatedLogs);
+      await saveLogsToCloud(targetDateKey, dayLog, updatedLogs);
     }
   };
 

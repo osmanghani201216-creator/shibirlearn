@@ -58,22 +58,29 @@ export default function DailyReflectionView({
 
   // Sync reflections in real-time if signed in, or fetch from localstorage
   useEffect(() => {
+    let unsubscribe = () => {};
     if (currentUser) {
       const path = `users/${currentUser.uid}/reflections`;
       const q = query(collection(db, path), orderBy('timestamp', 'desc'));
       
-      const unsubscribe = onSnapshot(q, (snapshot) => {
+      unsubscribe = onSnapshot(q, (snapshot) => {
         const loaded: DailyReflection[] = [];
         snapshot.forEach((snapDoc) => {
           loaded.push({ id: snapDoc.id, ...snapDoc.data() } as DailyReflection);
         });
         setReflections(loaded);
       }, (error) => {
-        // Log clean diagnostic telemetry
-        handleFirestoreError(error, OperationType.LIST, path);
+        console.warn('Firestore subscription alert (falling back to LocalStorage):', error);
+        // Fallback offline storage
+        const saved = localStorage.getItem('daily_reflections');
+        if (saved) {
+          try {
+            setReflections(JSON.parse(saved));
+          } catch (e) {
+            console.error('Error parsing reflections:', e);
+          }
+        }
       });
-      
-      return () => unsubscribe();
     } else {
       // Offline LocalStorage fallback
       const saved = localStorage.getItem('daily_reflections');
@@ -87,9 +94,10 @@ export default function DailyReflectionView({
         setReflections([]);
       }
     }
+    return () => unsubscribe();
   }, [currentUser]);
 
-  // Save changes locally (only used for offline mode)
+  // Save changes locally (only used for offline mode / fallback)
   const saveReflectionsLocally = (newReflections: DailyReflection[]) => {
     setReflections(newReflections);
     localStorage.setItem('daily_reflections', JSON.stringify(newReflections));
@@ -117,7 +125,9 @@ export default function DailyReflectionView({
           userId: currentUser.uid
         });
       } catch (error) {
-        handleFirestoreError(error, OperationType.CREATE, `${path}/${newRefId}`);
+        console.warn('Firestore write failed, using LocalStorage backup:', error);
+        const updated = [newRef, ...reflections];
+        saveReflectionsLocally(updated);
       }
     } else {
       const updated = [newRef, ...reflections];
@@ -141,8 +151,11 @@ export default function DailyReflectionView({
       const path = `users/${currentUser.uid}/reflections`;
       try {
         await deleteDoc(doc(db, path, id));
+        setReflections(prev => prev.filter(ref => ref.id !== id));
       } catch (error) {
-        handleFirestoreError(error, OperationType.DELETE, `${path}/${id}`);
+        console.warn('Firestore delete failed, removing locally:', error);
+        const updated = reflections.filter(ref => ref.id !== id);
+        saveReflectionsLocally(updated);
       }
     } else {
       const updated = reflections.filter(ref => ref.id !== id);

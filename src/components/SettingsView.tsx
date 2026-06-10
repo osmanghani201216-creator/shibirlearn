@@ -7,7 +7,7 @@ import React from 'react';
 import { AppSettings } from '../types';
 import { BANGLADESH_DISTRICTS } from '../utils/prayerTimes';
 import { toBengaliNumber } from '../utils/bengaliDate';
-import { Volume2, VolumeX, HelpCircle, ArrowLeft, Save, MapPin, Sliders, Bell, Check, HelpCircle as Help, Moon, Database, FileJson, FileSpreadsheet } from 'lucide-react';
+import { Volume2, VolumeX, HelpCircle, ArrowLeft, Save, MapPin, Sliders, Bell, Check, HelpCircle as Help, Moon, Database, FileJson, FileSpreadsheet, Mic, Square, Trash2, Play } from 'lucide-react';
 import { motion } from 'motion/react';
 import { audioSynth } from '../utils/audioSynth';
 
@@ -20,6 +20,191 @@ interface SettingsViewProps {
 export default function SettingsView({ settings, onUpdateSettings, onBack }: SettingsViewProps) {
   const [localSettings, setLocalSettings] = React.useState<AppSettings>({ ...settings });
   const [showSavedToast, setShowSavedToast] = React.useState(false);
+
+  // --- Audio Recording State ---
+  const [isRecording, setIsRecording] = React.useState(false);
+  const [recordingDuration, setRecordingDuration] = React.useState(0);
+  const [recordedBlob, setRecordedBlob] = React.useState<Blob | null>(null);
+  const [recordedUrl, setRecordedUrl] = React.useState<string | null>(null);
+  const [recordError, setRecordError] = React.useState<string | null>(null);
+
+  const mediaRecorderRef = React.useRef<MediaRecorder | null>(null);
+  const recordingTimerRef = React.useRef<any>(null);
+  const audioChunksRef = React.useRef<Blob[]>([]);
+
+  // Cleanup on unmount
+  React.useEffect(() => {
+    return () => {
+      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+    };
+  }, []);
+
+  const startRecording = async () => {
+    setRecordError(null);
+    setRecordedBlob(null);
+    setRecordedUrl(null);
+    audioChunksRef.current = [];
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        setRecordedBlob(blob);
+        const url = URL.createObjectURL(blob);
+        setRecordedUrl(url);
+
+        // Stop all audio tracks to release the mic
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+      setRecordingDuration(0);
+
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingDuration((prev) => {
+          if (prev >= 60) { // Limit recording to 60 seconds max
+            stopRecording();
+            return prev;
+          }
+          return prev + 1;
+        });
+      }, 1000);
+
+    } catch (err: any) {
+      console.error("Recording error:", err);
+      setRecordError("মাইক্রোফোন অ্যাক্সেস করা যায়নি। অনুগ্রহ করে পারমিশন চেক করুন।");
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+    }
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+    }
+    setIsRecording(false);
+  };
+
+  const saveRecordedAudio = () => {
+    if (!recordedBlob) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const base64 = event.target?.result as string;
+      const updated = {
+        ...localSettings,
+        customAdhanBase64: base64,
+        customAdhanName: `রেকর্ডকৃত আজান (${new Date().toLocaleTimeString('bn-BD', {hour12: false}).replace(/:/g, '-')})`,
+        selectedAdhanSample: 'custom_uploaded' as const
+      };
+      setLocalSettings(updated);
+      audioSynth.play('adhan_short', localSettings.alarmVolume, 'custom_uploaded', base64);
+    };
+    reader.readAsDataURL(recordedBlob);
+  };
+
+  const testRecordedAudio = () => {
+    if (recordedUrl) {
+      audioSynth.stopActiveAudio();
+      audioSynth.playPredefinedMp3(recordedUrl, localSettings.alarmVolume);
+    }
+  };
+
+  const deleteRecordedAudio = () => {
+    setRecordedBlob(null);
+    setRecordedUrl(null);
+  };
+
+  // --- Geolocation District Auto-Detection ---
+  const [isDetecting, setIsDetecting] = React.useState(false);
+  const [detectStatus, setDetectStatus] = React.useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
+
+  const detectNearestDistrict = () => {
+    if (!navigator.geolocation) {
+      setDetectStatus({
+        type: 'error',
+        message: 'দুঃখিত, আপনার ব্রাউজারটি Geolocation সমর্থন করে না।'
+      });
+      return;
+    }
+
+    setIsDetecting(true);
+    setDetectStatus({
+      type: 'info',
+      message: 'আপনার ডিভাইস থেকে ভৌগোলিক অবস্থান (GPS) খোঁজা হচ্ছে...'
+    });
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords;
+        
+        let nearestDist = BANGLADESH_DISTRICTS[0];
+        let minDistance = Infinity;
+
+        // Find the district with the shortest Haversine distance
+        BANGLADESH_DISTRICTS.forEach((d) => {
+          const R = 6371; // Earth radius in km
+          const dLat = ((d.latitude - latitude) * Math.PI) / 180;
+          const dLon = ((d.longitude - longitude) * Math.PI) / 180;
+          const a =
+            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos((latitude * Math.PI) / 180) *
+              Math.cos((d.latitude * Math.PI) / 180) *
+              Math.sin(dLon / 2) *
+              Math.sin(dLon / 2);
+          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+          const distance = R * c;
+
+          if (distance < minDistance) {
+            minDistance = distance;
+            nearestDist = d;
+          }
+        });
+
+        setLocalSettings((prev) => ({
+          ...prev,
+          selectedDistrictId: nearestDist.id
+        }));
+
+        setDetectStatus({
+          type: 'success',
+          message: `সাফল্যের সাথে নিকটতম জেলা '${nearestDist.nameBn}' সনাক্ত করা হয়েছে! (দূরত্ব: আনুমানিক ${toBengaliNumber(minDistance.toFixed(1))} কি.মি.)`
+        });
+        setIsDetecting(false);
+      },
+      (error) => {
+        console.error("Geolocation error:", error);
+        let errorMsg = 'অবস্থান সনাক্ত করা সম্ভব হয়নি। অনুগ্রহ করে লোকেশন পারমিশন বা জিপিএস অন করুন।';
+        if (error.code === error.PERMISSION_DENIED) {
+          errorMsg = 'লোকেশন অ্যাক্সেস প্রত্যাখ্যান করা হয়েছে। ব্রাউজার সেটিংস থেকে অনুমতি দিন।';
+        } else if (error.code === error.POSITION_UNAVAILABLE) {
+          errorMsg = 'অবস্থানের তথ্য পাওয়া যায়নি। অনুগ্রহ করে জিপিএস চালু করুন।';
+        } else if (error.code === error.TIMEOUT) {
+          errorMsg = 'লোকেশন খোঁজার সময় শেষ হয়ে গেছে। আবার চেষ্টা করুন।';
+        }
+        setDetectStatus({
+          type: 'error',
+          message: errorMsg
+        });
+        setIsDetecting(false);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0
+      }
+    );
+  };
 
   // Group districts by division
   const divisions = Array.from(new Set(BANGLADESH_DISTRICTS.map((d) => d.division)));
@@ -262,6 +447,37 @@ export default function SettingsView({ settings, onUpdateSettings, onBack }: Set
                   </optgroup>
                 ))}
               </select>
+
+              <div className="mt-2 text-right">
+                <button
+                  type="button"
+                  onClick={detectNearestDistrict}
+                  disabled={isDetecting}
+                  className="inline-flex items-center gap-1.5 py-1.5 px-3 text-[11px] font-bold text-emerald-850 bg-emerald-50 hover:bg-emerald-100/60 disabled:opacity-60 rounded-xl transition-all border border-emerald-150/75 shadow-4xs cursor-pointer"
+                  id="btn-detect-nearest-district"
+                >
+                  <MapPin size={13} className={isDetecting ? "animate-bounce text-emerald-600" : "text-emerald-700"} />
+                  {isDetecting ? 'অবস্থান খোঁজা হচ্ছে...' : 'জিপিএস দিয়ে নিকটতম জেলা সনাক্ত করুন'}
+                </button>
+
+                {detectStatus && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className={`mt-2 p-2.5 rounded-xl text-[11px] font-semibold flex items-start gap-1.5 border text-left leading-relaxed ${
+                      detectStatus.type === 'success' ? 'bg-emerald-50/50 border-emerald-100/75 text-emerald-950' :
+                      detectStatus.type === 'error' ? 'bg-rose-50/50 border-rose-100/75 text-rose-900' :
+                      'bg-slate-50 border-slate-100 text-slate-700'
+                    }`} 
+                    id="detect-status-container"
+                  >
+                    <span className="shrink-0 mt-0.5">
+                      {detectStatus.type === 'success' ? '✓' : detectStatus.type === 'error' ? '⚠' : 'ℹ'}
+                    </span>
+                    <span>{detectStatus.message}</span>
+                  </motion.div>
+                )}
+              </div>
             </div>
 
             <div>
@@ -302,7 +518,7 @@ export default function SettingsView({ settings, onUpdateSettings, onBack }: Set
                 <select
                   value={localSettings.alarmSoundType}
                   onChange={handleSoundTypeChange}
-                  className="w-full text-xs font-medium border border-emerald-100 rounded-xl px-3 py-2 bg-emerald-50/20 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-700 focus:border-transparent cursor-pointer transition-all"
+                  className="w-full text-xs font-medium border border-emerald-100 rounded-xl px-3 py-2 bg-emerald-50/20 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-700 focus:border-transparent cursor-pointer transition-all text-slate-800"
                   id="select-alarm-sound"
                 >
                   <option value="adhan_short">ক্ষুদ্র আজান মেলোডি (Adhan Short)</option>
@@ -371,88 +587,167 @@ export default function SettingsView({ settings, onUpdateSettings, onBack }: Set
                       <option value="synth_makkah">মক্কা আজান স্টাইল সিন্থ (Makkah Style Synth)</option>
                       <option value="synth_madinah">মদীনা আজান স্টাইল সিন্থ (Madinah Style Synth)</option>
                       <option value="synth_aqsa">আকসা আজান স্টাইল সিন্থ (Al-Aqsa Style Synth)</option>
+                      <option value="synth_dhaka">ঢাকা আজান সুর সিন্থ (Dhaka Style Synth)</option>
                     </optgroup>
-                    <optgroup label="হাই-ফিডেলিটি আজান রেকর্ড (High-Fidelity MP3 - Requires Internet)" className="text-emerald-900 font-bold text-xs">
+                    <optgroup label="হাই-ফিডেলিটি আজান রেকর্ড (High-Fidelity MP3 - Requires Internet)" className="text-emerald-950 font-bold text-xs">
                       <option value="mp3_makkah">মহিমান্বিত হারামাইন আজান - মক্কা (Makkah MP3)</option>
                       <option value="mp3_madinah">প্রশান্তিময় মসজিদে নববী আজান - মদীনা (Madinah MP3)</option>
                       <option value="mp3_egypt">ঐতিহ্যবাহী কায়রো আজান - মিসর (Egypt MP3)</option>
                     </optgroup>
                     {localSettings.customAdhanBase64 && (
-                      <optgroup label="আপনার আপলোডকৃত সাউন্ড (User Uploaded)" className="text-emerald-900 font-bold text-xs">
+                      <optgroup label="আপনার আপলোড/রেকর্ডকৃত সাউন্ড (Custom Sound)" className="text-emerald-950 font-bold text-xs">
                         <option value="custom_uploaded">
-                          {localSettings.customAdhanName || 'আমার কাস্টম আজান ফাইল'} (কাস্টম ফাইল)
+                          {localSettings.customAdhanName || 'কাস্টম অডিও ফাইল'} (কাস্টম অডিও)
                         </option>
                       </optgroup>
                     )}
                   </select>
                 </div>
 
-                {/* File picker for custom adhan audio */}
-                <div className="border border-dashed border-emerald-250 p-4 rounded-xl bg-white space-y-3">
-                  <div className="flex items-center justify-between">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
+                  {/* File picker for custom adhan audio */}
+                  <div className="border border-dashed border-emerald-200 p-3.5 rounded-xl bg-white flex flex-col justify-between space-y-2">
                     <div>
-                      <span className="text-xs font-bold text-emerald-950 block">কাস্টম আজান বা রিমাইন্ডার অডিও ফাইল</span>
-                      <span className="text-[10px] text-slate-500 block">MP3 / WAV/ OGG সাপোর্ট করে (সর্বোচ্চ ২.৫ মেগাবাইট)</span>
+                      <span className="text-xs font-bold text-emerald-950 block">ডিভাইস থেকে ফাইল আপলোড</span>
+                      <span className="text-[10px] text-slate-500 block">MP3/WAV/OGG (সর্বোচ্চ ২.৫ মেগাবাইট)</span>
                     </div>
-                    {localSettings.customAdhanBase64 && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const updated = {
-                            ...localSettings,
-                            customAdhanBase64: '',
-                            customAdhanName: '',
-                            selectedAdhanSample: 'synth_classic' as const
-                          };
-                          setLocalSettings(updated);
-                        }}
-                        className="text-[10px] font-black text-rose-600 hover:underline cursor-pointer bg-none border-none outline-none"
-                        id="btn-remove-custom-adhan"
-                      >
-                        ফাইল মুছুন
-                      </button>
-                    )}
-                  </div>
 
-                  <div className="flex items-center gap-3">
-                    <input
-                      type="file"
-                      accept="audio/*"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) {
-                          if (file.size > 2.5 * 1024 * 1024) {
-                            alert("ফাইল সাইজ ২.৫ মেগাবাইটের বেশি হতে পারবে না। অনুগ্রহ করে ছোট অডিও বা আজান ক্লিপ উর্ধ্বমুখী চেক করুন।");
-                            return;
-                          }
-                          const reader = new FileReader();
-                          reader.onload = (event) => {
-                            const base64 = event.target?.result as string;
-                            const updated = {
-                              ...localSettings,
-                              customAdhanBase64: base64,
-                              customAdhanName: file.name,
-                              selectedAdhanSample: 'custom_uploaded' as const
+                    <div className="flex flex-col gap-2">
+                      <input
+                        type="file"
+                        accept="audio/*"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            if (file.size > 2.5 * 1024 * 1024) {
+                              alert("ফাইল সাইজ ২.৫ মেগাবাইটের বেশি হতে পারবে না। অনুগ্রহ করে ছোট ক্লিপ আপলোড করুন।");
+                              return;
+                            }
+                            const reader = new FileReader();
+                            reader.onload = (event) => {
+                              const base64 = event.target?.result as string;
+                              const updated = {
+                                ...localSettings,
+                                customAdhanBase64: base64,
+                                customAdhanName: file.name,
+                                selectedAdhanSample: 'custom_uploaded' as const
+                              };
+                              setLocalSettings(updated);
+                              // preview immediately
+                              audioSynth.play('adhan_short', localSettings.alarmVolume, 'custom_uploaded', base64);
                             };
-                            setLocalSettings(updated);
-                            // preview immediately
-                            audioSynth.play('adhan_short', localSettings.alarmVolume, 'custom_uploaded', base64);
-                          };
-                          reader.readAsDataURL(file);
-                        }
-                      }}
-                      className="text-xs text-slate-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-[10px] file:font-bold file:bg-emerald-50 file:text-emerald-805 hover:file:bg-emerald-100 cursor-pointer w-full"
-                      id="file-adhan-picker"
-                    />
+                            reader.readAsDataURL(file);
+                          }
+                        }}
+                        className="text-[10px] text-slate-500 file:mr-2 file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-[9px] file:font-bold file:bg-emerald-50 file:text-emerald-800 hover:file:bg-emerald-100 cursor-pointer w-full"
+                        id="file-adhan-picker-custom"
+                      />
+                    </div>
                   </div>
 
-                  {localSettings.customAdhanBase64 && (
-                    <div className="flex items-center gap-1.5 bg-emerald-50/40 p-2.5 rounded-lg border border-emerald-100 text-[10px] text-emerald-900 font-bold">
-                      <span className="shrink-0 text-emerald-700">✓ সংযুক্ত ফাইল:</span>
-                      <span className="truncate flex-1 text-slate-600 font-mono text-[9px] font-normal">{localSettings.customAdhanName}</span>
+                  {/* Microphone live recorder */}
+                  <div className="border border-dashed border-emerald-200 p-3.5 rounded-xl bg-white flex flex-col justify-between space-y-2">
+                    <div>
+                      <span className="text-xs font-bold text-emerald-950 block flex items-center gap-1">
+                        <Mic size={13} className="text-rose-600 animate-pulse" />
+                        আজান বা কণ্ঠ রেকর্ড করুন
+                      </span>
+                      <span className="text-[10px] text-slate-500 block">মাইক্রোফোন দিয়ে সরাসরি ১ মিনিট রেঞ্জ</span>
                     </div>
-                  )}
+
+                    <div className="flex flex-col gap-2">
+                      {isRecording ? (
+                        <div className="flex items-center justify-between bg-rose-50 border border-rose-100 rounded-lg p-1.5 px-2">
+                          <span className="text-[10px] text-rose-700 font-bold flex items-center gap-1 animate-pulse">
+                            <span className="w-2 h-2 rounded-full bg-rose-600 animate-ping" />
+                            রেকর্ড হচ্ছে... {toBengaliNumber(recordingDuration)} সে.
+                          </span>
+                          <button
+                            type="button"
+                            onClick={stopRecording}
+                            className="bg-rose-600 hover:bg-rose-700 text-white rounded-md p-1 px-2 text-[9px] font-bold flex items-center gap-1 cursor-pointer"
+                            id="btn-recorder-stop"
+                          >
+                            <Square size={9} fill="currentColor" />
+                            থামুন
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {!recordedUrl ? (
+                            <button
+                              type="button"
+                              onClick={startRecording}
+                              className="bg-emerald-800 hover:bg-emerald-900 text-white font-bold text-[10px] py-1.5 px-3 rounded-lg flex items-center gap-1 cursor-pointer w-full justify-center shadow-sm"
+                              id="btn-recorder-start"
+                            >
+                              <Mic size={11} />
+                              রেকর্ডিং শুরু করুন
+                            </button>
+                          ) : (
+                            <div className="w-full space-y-2">
+                              <div className="flex items-center justify-between gap-1 w-full bg-slate-50 border border-slate-100 rounded-lg p-1 px-1.5">
+                                <button
+                                  type="button"
+                                  onClick={testRecordedAudio}
+                                  className="bg-emerald-100 hover:bg-emerald-200 text-emerald-800 rounded-md p-1 px-1.5 text-[9px] font-bold flex items-center gap-0.5 cursor-pointer"
+                                  title="রেকর্ডকৃত ক্লিপটি শুনুন"
+                                >
+                                  <Play size={8} fill="currentColor" /> শুনুন
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={saveRecordedAudio}
+                                  className="bg-emerald-800 hover:bg-emerald-900 text-white rounded-md p-1 px-1.5 text-[9px] font-bold flex items-center gap-0.5 cursor-pointer"
+                                  title="এটি আপনার কাস্টม আজান হিসেবে সেট করুন"
+                                >
+                                  সংরক্ষণ
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={deleteRecordedAudio}
+                                  className="text-rose-600 hover:bg-rose-50 rounded-md p-1 cursor-pointer"
+                                  title="মুছে ফেলুন"
+                                >
+                                  <Trash2 size={10} />
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      
+                      {recordError && (
+                        <span className="text-[9px] text-rose-600 font-semibold block">{recordError}</span>
+                      )}
+                    </div>
+                  </div>
                 </div>
+
+                {localSettings.customAdhanBase64 && (
+                  <div className="flex items-center justify-between bg-emerald-50/40 p-2.5 rounded-lg border border-emerald-100 text-[10px] text-emerald-900 font-bold mt-1">
+                    <div className="flex items-center gap-1.5 truncate">
+                      <span className="shrink-0 text-emerald-700">✓ সচল কাস্টম সাউন্ড:</span>
+                      <span className="truncate text-slate-600 font-mono text-[9px] font-normal">{localSettings.customAdhanName}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const updated = {
+                          ...localSettings,
+                          customAdhanBase64: '',
+                          customAdhanName: '',
+                          selectedAdhanSample: 'synth_classic' as const
+                        };
+                        setLocalSettings(updated);
+                      }}
+                      className="text-[9px] font-black text-rose-600 hover:underline cursor-pointer bg-none border-none outline-none ml-2 shrink-0"
+                      id="btn-remove-custom-sound-bottom"
+                    >
+                      মুছুন
+                    </button>
+                  </div>
+                )}
               </motion.div>
             )}
 

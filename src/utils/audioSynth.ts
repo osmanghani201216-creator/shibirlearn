@@ -11,6 +11,8 @@
 class AudioSynth {
   private ctx: AudioContext | null = null;
   private activeAudio: HTMLAudioElement | null = null;
+  private dstNode: AudioNode | null = null;
+  private audioFadeInterval: any = null;
 
   private initCtx() {
     if (!this.ctx) {
@@ -21,7 +23,30 @@ class AudioSynth {
     }
   }
 
+  private stopAudioFade() {
+    if (this.audioFadeInterval) {
+      clearInterval(this.audioFadeInterval);
+      this.audioFadeInterval = null;
+    }
+  }
+
+  private setupSynthFade() {
+    this.initCtx();
+    if (this.ctx) {
+      const fadeGain = this.ctx.createGain();
+      fadeGain.connect(this.ctx.destination);
+      
+      const startTime = this.ctx.currentTime;
+      fadeGain.gain.setValueAtTime(0.1, startTime);
+      fadeGain.gain.linearRampToValueAtTime(1.0, startTime + 5.0);
+      
+      this.dstNode = fadeGain;
+    }
+  }
+
   stopActiveAudio() {
+    this.stopAudioFade();
+    this.dstNode = null;
     if (this.activeAudio) {
       try {
         this.activeAudio.pause();
@@ -33,17 +58,40 @@ class AudioSynth {
     }
   }
 
-  playPredefinedMp3(url: string, volume = 0.5) {
+  playPredefinedMp3(url: string, volume = 0.5, fade = false) {
     try {
       this.stopActiveAudio();
       
       const audio = new Audio();
       this.activeAudio = audio;
       audio.src = url;
-      audio.volume = volume;
+      
+      if (fade) {
+        this.stopAudioFade();
+        const startVol = 0.1 * volume;
+        const targetVol = volume;
+        audio.volume = startVol;
+        
+        const startTime = Date.now();
+        const duration = 5000;
+        
+        this.audioFadeInterval = setInterval(() => {
+          const elapsed = Date.now() - startTime;
+          if (elapsed >= duration) {
+            audio.volume = targetVol;
+            this.stopAudioFade();
+          } else {
+            const fraction = elapsed / duration;
+            audio.volume = startVol + (targetVol - startVol) * fraction;
+          }
+        }, 50);
+      } else {
+        audio.volume = volume;
+      }
       
       audio.onerror = () => {
         console.warn("Audio load/CORS error, falling back to synthesiser");
+        this.setupSynthFade();
         this.playShortAdhan(volume);
       };
       
@@ -51,11 +99,13 @@ class AudioSynth {
       if (playPromise !== undefined) {
         playPromise.catch((err) => {
           console.warn("Audio play blocked/failed, falling back to synthesiser:", err);
+          this.setupSynthFade();
           this.playShortAdhan(volume);
         });
       }
     } catch (e) {
       console.warn("Failed to play audio file, falling back to synthesiser:", e);
+      this.setupSynthFade();
       this.playShortAdhan(volume);
     }
   }
@@ -75,7 +125,7 @@ class AudioSynth {
     gainNode.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.3);
 
     osc.connect(gainNode);
-    gainNode.connect(this.ctx.destination);
+    gainNode.connect(this.dstNode || this.ctx.destination);
 
     osc.start();
     osc.stop(this.ctx.currentTime + 0.3);
@@ -96,7 +146,7 @@ class AudioSynth {
     gainNode.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.8);
 
     osc.connect(gainNode);
-    gainNode.connect(this.ctx.destination);
+    gainNode.connect(this.dstNode || this.ctx.destination);
 
     osc.start();
     osc.stop(this.ctx.currentTime + 0.8);
@@ -122,7 +172,7 @@ class AudioSynth {
       gainNode.gain.exponentialRampToValueAtTime(0.01, time + idx * 0.15 + 0.6);
 
       osc.connect(gainNode);
-      gainNode.connect(this.ctx!.destination);
+      gainNode.connect(this.dstNode || this.ctx!.destination);
 
       osc.start(time + idx * 0.15);
       osc.stop(time + idx * 0.15 + 0.6);
@@ -156,7 +206,7 @@ class AudioSynth {
       gainNode.gain.exponentialRampToValueAtTime(0.001, startTime + durations[idx]);
 
       osc.connect(gainNode);
-      gainNode.connect(this.ctx!.destination);
+      gainNode.connect(this.dstNode || this.ctx!.destination);
 
       lfo.start(startTime);
       osc.start(startTime);
@@ -194,7 +244,7 @@ class AudioSynth {
       gainNode.gain.exponentialRampToValueAtTime(0.001, startTime + durations[idx]);
 
       osc.connect(gainNode);
-      gainNode.connect(this.ctx!.destination);
+      gainNode.connect(this.dstNode || this.ctx!.destination);
 
       lfo.start(startTime);
       osc.start(startTime);
@@ -232,7 +282,7 @@ class AudioSynth {
       gainNode.gain.exponentialRampToValueAtTime(0.001, startTime + durations[idx]);
 
       osc.connect(gainNode);
-      gainNode.connect(this.ctx!.destination);
+      gainNode.connect(this.dstNode || this.ctx!.destination);
 
       lfo.start(startTime);
       osc.start(startTime);
@@ -240,6 +290,55 @@ class AudioSynth {
       osc.stop(startTime + durations[idx]);
 
       startTime += durations[idx] * 0.85;
+    });
+  }
+
+  playDhakaAdhan(volume = 0.5) {
+    this.stopActiveAudio();
+    this.initCtx();
+    if (!this.ctx) return;
+
+    // Peaceful Bhairavi/Phrygian scale structure for local Subcontinent feeling
+    const freqs = [
+      233.08, // Bb3 grounding
+      293.66, // D4
+      311.13, // Eb4
+      349.23, // F4
+      392.00, // G4
+      349.23, // F4
+      311.13, // Eb4
+      293.66, // D4
+      233.08  // Bb3
+    ];
+    const durations = [0.6, 0.5, 0.65, 0.55, 0.7, 0.55, 0.5, 0.6, 0.95];
+    let startTime = this.ctx.currentTime;
+
+    freqs.forEach((freq, idx) => {
+      const osc = this.ctx!.createOscillator();
+      const gainNode = this.ctx!.createGain();
+      osc.type = 'triangle'; // Warm, flute-like tone
+      osc.frequency.setValueAtTime(freq, startTime);
+
+      const lfo = this.ctx!.createOscillator();
+      const lfoGain = this.ctx!.createGain();
+      lfo.frequency.value = 5.0; // Sweet vocal flutter vibrato
+      lfoGain.gain.value = 4.5;
+      lfo.connect(lfoGain);
+      lfoGain.connect(osc.frequency);
+
+      gainNode.gain.setValueAtTime(0, startTime);
+      gainNode.gain.linearRampToValueAtTime(volume * 0.5, startTime + 0.08);
+      gainNode.gain.exponentialRampToValueAtTime(0.001, startTime + durations[idx]);
+
+      osc.connect(gainNode);
+      gainNode.connect(this.dstNode || this.ctx!.destination);
+
+      lfo.start(startTime);
+      osc.start(startTime);
+      lfo.stop(startTime + durations[idx]);
+      osc.stop(startTime + durations[idx]);
+
+      startTime += durations[idx] * 0.82;
     });
   }
 
@@ -287,7 +386,7 @@ class AudioSynth {
       gainNode.gain.exponentialRampToValueAtTime(0.001, startTime + durations[idx]);
 
       osc.connect(gainNode);
-      gainNode.connect(this.ctx!.destination);
+      gainNode.connect(this.dstNode || this.ctx!.destination);
 
       lfo.start(startTime);
       osc.start(startTime);
@@ -305,8 +404,14 @@ class AudioSynth {
     adhanSample?: string,
     customAdhanBase64?: string
   ) {
+    this.dstNode = null;
     if (type === 'adhan_short') {
       const sample = adhanSample || 'synth_classic';
+      const isSynth = sample.startsWith('synth') || (sample === 'custom_uploaded' && !customAdhanBase64);
+      if (isSynth) {
+        this.setupSynthFade();
+      }
+
       switch (sample) {
         case 'synth_makkah':
           this.playMakkahAdhan(volume);
@@ -317,18 +422,21 @@ class AudioSynth {
         case 'synth_aqsa':
           this.playAqsaAdhan(volume);
           break;
+        case 'synth_dhaka':
+          this.playDhakaAdhan(volume);
+          break;
         case 'mp3_makkah':
-          this.playPredefinedMp3('https://www.islamcan.com/audio/adhan/azan1.mp3', volume);
+          this.playPredefinedMp3('https://www.islamcan.com/audio/adhan/azan1.mp3', volume, true);
           break;
         case 'mp3_madinah':
-          this.playPredefinedMp3('https://www.islamcan.com/audio/adhan/azan2.mp3', volume);
+          this.playPredefinedMp3('https://www.islamcan.com/audio/adhan/azan2.mp3', volume, true);
           break;
         case 'mp3_egypt':
-          this.playPredefinedMp3('https://www.islamcan.com/audio/adhan/azan3.mp3', volume);
+          this.playPredefinedMp3('https://www.islamcan.com/audio/adhan/azan3.mp3', volume, true);
           break;
         case 'custom_uploaded':
           if (customAdhanBase64) {
-            this.playPredefinedMp3(customAdhanBase64, volume);
+            this.playPredefinedMp3(customAdhanBase64, volume, true);
           } else {
             this.playShortAdhan(volume);
           }
