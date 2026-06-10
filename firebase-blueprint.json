@@ -1,0 +1,145 @@
+{
+  "entities": {
+    "daily_reflection": {
+      "title": "Daily Reflection",
+      "description": "A positive deed or gratitude entry recorded by the user daily.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier of the reflection record."
+        },
+        "date": {
+          "type": "string",
+          "format": "date",
+          "description": "The date of the reflection in YYYY-MM-DD format."
+        },
+        "timestamp": {
+          "type": "integer",
+          "description": "Epoch timestamp of when the entry was logged."
+        },
+        "text": {
+          "type": "string",
+          "description": "The description of the deed or gratitude experience."
+        },
+        "category": {
+          "type": "string",
+          "enum": ["deed", "gratitude"],
+          "description": "Whether this indicates a positive deed or an expression of gratitude."
+        },
+        "userId": {
+          "type": "string",
+          "description": "The authenticated owner user ID."
+        }
+      },
+      "required": ["id", "date", "timestamp", "text", "category", "userId"]
+    },
+    "prayer_track_day": {
+      "title": "Prayer Day Log",
+      "description": "Daily logged prayer status updates for Fajr, Dhuhr, Asr, Maghrib, Isha, Tahajjud, and Witr.",
+      "type": "object",
+      "properties": {
+        "date": {
+          "type": "string",
+          "format": "date",
+          "description": "The date of the prayer log in YYYY-MM-DD format."
+        },
+        "timestamp": {
+          "type": "integer",
+          "description": "Epoch timestamp of the update."
+        },
+        "userId": {
+          "type": "string",
+          "description": "The owner's authenticated user ID."
+        },
+        "fajr": {
+          "type": "string",
+          "enum": ["pending", "alone", "jamat", "excused", "missed"],
+          "description": "Status of Fajr prayer."
+        },
+        "dhuhr": {
+          "type": "string",
+          "enum": ["pending", "alone", "jamat", "excused", "missed"],
+          "description": "Status of Dhuhr prayer."
+        },
+        "asr": {
+          "type": "string",
+          "enum": ["pending", "alone", "jamat", "excused", "missed"],
+          "description": "Status of Asr prayer."
+        },
+        "maghrib": {
+          "type": "string",
+          "enum": ["pending", "alone", "jamat", "excused", "missed"],
+          "description": "Status of Maghrib prayer."
+        },
+        "isha": {
+          "type": "string",
+          "enum": ["pending", "alone", "jamat", "excused", "missed"],
+          "description": "Status of Isha prayer."
+        },
+        "tahajjud": {
+          "type": "string",
+          "enum": ["pending", "alone", "jamat", "excused", "missed"],
+          "description": "Status of Tahajjud prayer."
+        },
+        "witr": {
+          "type": "string",
+          "enum": ["pending", "alone", "jamat", "excused", "missed"],
+          "description": "Status of Witr prayer."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Personal notes or insights logged for the day."
+        }
+      },
+      "required": ["date", "timestamp", "userId", "fajr", "dhuhr", "asr", "maghrib", "isha"]
+    },
+    "user_public_profile": {
+      "title": "User Public Profile",
+      "description": "Public identifier for safe non-PII data sharing.",
+      "type": "object",
+      "properties": {
+        "displayName": {
+          "type": "string",
+          "description": "User's preferred exhibition name."
+        },
+        "districtId": {
+          "type": "string",
+          "description": "Default selected Bangladesh district ID for prayer offset calculations."
+        }
+      },
+      "required": ["displayName"]
+    },
+    "user_private_pii": {
+      "title": "User Private PII",
+      "description": "Personally Identifiable Information isolated for secure owner-only read/write access.",
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "Primary account email."
+        }
+      },
+      "required": ["email"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/reflections/{reflectionId}": {
+      "schema": "daily_reflection",
+      "description": "Saves daily deed and gratitude reflections for the user."
+    },
+    "/users/{userId}/prayer_logs/{date}": {
+      "schema": "prayer_track_day",
+      "description": "User's daily logged history for the five daily obligatory and optional prayers."
+    },
+    "/users/{userId}/public/profile": {
+      "schema": "user_public_profile",
+      "description": "Safe display settings and non-sensitive configs."
+    },
+    "/users/{userId}/private/info": {
+      "schema": "user_private_pii",
+      "description": "Strictly restricted personal information (Isolated PII)."
+    }
+  }
+}

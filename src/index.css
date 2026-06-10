@@ -1,0 +1,140 @@
+@import "tailwindcss";
+
+/* HIGH-CONTRAST DARK MODE GLOBALS AND OVERRIDES */
+.dark {
+  /* Ensure parent containers and page backgrounds switch */
+  --bg-main: #020617;
+  --bg-card: #090f1e;
+  --bg-card-hover: #121e31;
+  --border-color: #1e293b;
+  --border-accent: #0f172a;
+  
+  color: #f8fafc !important;
+}
+
+/* Page background overrides */
+.dark .bg-\[\#f3f9f6\],
+.dark .bg-\[\#fafdfb\],
+.dark .bg-slate-50\/50,
+.dark .bg-slate-50\/30,
+.dark .bg-emerald-50\/20,
+.dark .bg-emerald-50\/10,
+.dark .bg-emerald-50\/45,
+.dark .bg-emerald-50\/5\/10,
+.dark .bg-emerald-50\/30,
+.dark .bg-emerald-50\/40,
+.dark .bg-[#fafdfb] {
+  background-color: #020617 !important;
+}
+
+/* Main card and headers override */
+.dark .bg-white,
+.dark header,
+.dark footer {
+  background-color: #090f1e !important;
+  border-color: #1e293b !important;
+}
+
+/* Secondary dark panels */
+.dark .bg-slate-50,
+.dark .bg-slate-100,
+.dark .bg-emerald-50,
+.dark .bg-emerald-50\/70,
+.dark .bg-sky-50\/40,
+.dark .bg-orange-50\/40,
+.dark .bg-amber-50\/40,
+.dark .bg-rose-50\/40,
+.dark .bg-indigo-50\/40,
+.dark .bg-violet-50\/40,
+.dark .bg-teal-50\/40 {
+  background-color: #121f35 !important;
+  border-color: #1e293b !important;
+}
+
+/* Borders */
+.dark .border-emerald-100,
+.dark .border-slate-100,
+.dark .border-slate-200,
+.dark .border-emerald-50,
+.dark .border-slate-200\/80,
+.dark .border-slate-200\/60,
+.dark .border-slate-200\/70,
+.dark .border-emerald-200 {
+  border-color: #1e293b !important;
+}
+
+/* Deep inputs & selection fields */
+.dark input,
+.dark select,
+.dark textarea {
+  background-color: #121f35 !important;
+  color: #f8fafc !important;
+  border-color: #1e293b !important;
+}
+
+.dark select option {
+  background-color: #090f1e !important;
+  color: #f8fafc !important;
+}
+
+/* Text primary state overrides */
+.dark .text-emerald-950,
+.dark .text-slate-900,
+.dark .text-slate-950,
+.dark .text-slate-800,
+.dark .text-emerald-900,
+.dark .text-slate-700 {
+  color: #f8fafc !important;
+}
+
+.dark .text-emerald-850,
+.dark .text-slate-600,
+.dark .text-slate-500,
+.dark .text-emerald-700 {
+  color: #cbd5e1 !important;
+}
+
+/* Bright highlights & statuses */
+.dark .text-emerald-800,
+.dark .text-emerald-850\/80 {
+  color: #34d399 !important;
+}
+
+/* Buttons in nav */
+.dark .bg-emerald-50 {
+  background-color: #121f35 !important;
+}
+
+.dark .hover\:bg-emerald-100\/60:hover {
+  background-color: #1a2d4c !important;
+}
+
+.dark .bg-emerald-800 {
+  background-color: #047857 !important;
+}
+
+.dark .hover\:bg-emerald-900:hover,
+.dark .bg-emerald-800:hover {
+  background-color: #059669 !important;
+}
+
+/* Specific text highlight classes to prevent dark background blending */
+.dark .text-orange-850,
+.dark .text-amber-900,
+.dark .text-sky-900,
+.dark .text-rose-900,
+.dark .text-indigo-900,
+.dark .text-violet-900,
+.dark .text-teal-900 {
+  color: #f8fafc !important;
+}
+
+/* Calendar selected days / tracker dates */
+.dark .bg-emerald-700,
+.dark .bg-slate-900 {
+  background-color: #047857 !important;
+}
+
+.dark .text-slate-150 {
+  color: #f1f5f9 !important;
+}

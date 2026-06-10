@@ -1,0 +1,11 @@
+{
+  "name": "Remix: Prayer Times Bangladesh",
+  "description": "নামাজের সময়সূচী, নিষিদ্ধ সময়, নফল নামাজ, ক্যালেন্ডার, মসজিদ এবং কাস্টম নোটিফিকেশন এলার্মসহ একটি সম্পূর্ণ ইসলামিক ওয়েব অ্যাপ্লিকেশন।",
+  "requestFramePermissions": [
+    "notification",
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
